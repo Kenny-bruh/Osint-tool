@@ -224,6 +224,9 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, args:
         "• `getall [path]` – download all files from a directory (relative to current)\n"
         "• `dumpall [path]` (or `takeall`) – download entire VPS (default: /)\n"
         "• `help` – show this message\n\n"
+        "🔧 **Slash commands:**\n"
+        "• `/com <any shell command>` – execute any command (e.g., `/com df -h`)\n"
+        "• `/download`, `/getall`, `/dumpall`, `/takeall` also work with slash.\n\n"
         "Any other text is executed as a shell command."
     ).format("\n• ".join(f"`{a}` → `{ALIASES[a]}`" for a in aliases))
 
@@ -232,6 +235,29 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, args:
             await update.message.reply_text(msg[i:i+4000], parse_mode="Markdown")
     else:
         await update.message.reply_text(msg, parse_mode="Markdown")
+
+# ---------- /com COMMAND HANDLER ----------
+async def com_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Execute any shell command after /com."""
+    if update.effective_user.id not in context.bot_data.get("owners", []):
+        return
+
+    # Get the full command text after "/com"
+    text = update.message.text
+    # Remove the command and any leading spaces
+    cmd = text[len("/com"):].strip()
+    if not cmd:
+        await update.message.reply_text("Usage: /com <command>")
+        return
+
+    async with cwd_lock:
+        output = run_cmd(cmd)
+
+    if not output:
+        output = "✅ Done"
+
+    for i in range(0, len(output), 4000):
+        await update.message.reply_text(output[i:i+4000])
 
 # ---------- MAIN MESSAGE HANDLER ----------
 async def terminal(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -301,12 +327,15 @@ def start_bot(token: str, owners: list):
     # Document uploads
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
-    # Still keep slash commands for compatibility (optional)
+    # /com command for arbitrary shell commands
+    app.add_handler(CommandHandler("com", com_command))
+
+    # Slash versions of other commands (for compatibility)
     app.add_handler(CommandHandler("download", lambda u,c: download_handler(u,c, c.args or [])))
     app.add_handler(CommandHandler("getall", lambda u,c: getall_handler(u,c, c.args or [])))
     app.add_handler(CommandHandler("dumpall", lambda u,c: dumpall_handler(u,c, c.args or [])))
     app.add_handler(CommandHandler("takeall", lambda u,c: dumpall_handler(u,c, c.args or [])))
     app.add_handler(CommandHandler("help", lambda u,c: help_handler(u,c, [])))
 
-    print("🤖 Bot is running... (commands work without /)")
+    print("🤖 Bot is running... (commands work without /, and /com works for any shell command)")
     app.run_polling()
